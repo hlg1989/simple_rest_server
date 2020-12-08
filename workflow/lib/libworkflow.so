@@ -1,0 +1,1 @@
+GROUP ( libworkflow.a AS_NEEDED ( libpthread.so libssl.so libcrypto.so ) ) 
