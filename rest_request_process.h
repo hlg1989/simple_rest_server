@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <mutex>
 #include "workflow/HttpMessage.h"
+#include "spdlog/spdlog.h"
 
 using namespace protocol;
 namespace gwecom {
@@ -52,7 +53,7 @@ namespace gwecom {
 
             class rest_request_process {
             public:
-                rest_request_process(std::string root_path);
+                rest_request_process(const std::string& root_path, const std::string& logger_name = "rest_server");
 
                 ~rest_request_process();
 
@@ -76,6 +77,8 @@ namespace gwecom {
                 std::unordered_map<std::string, std::string> m_hwid_licenses;
                 std::string m_hwid_filename = "hw_id.txt";
                 std::string m_hwlicense_filename = "hw_license.txt";
+
+                std::shared_ptr<spdlog::logger> m_logger;
 
             };
         }

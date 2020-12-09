@@ -4,6 +4,7 @@
 
 #include "workflow/HttpMessage.h"
 #include "rest_request_process.h"
+#include "logger_factory.h"
 #include <unistd.h>
 #include <string>
 #include <set>
@@ -46,7 +47,7 @@ namespace gwecom {
                 }
             }
 
-            rest_request_process::rest_request_process(std::string root_path)
+            rest_request_process::rest_request_process(const std::string& root_path, const std::string& logger_name)
                 : m_hwid_mtx()
                 , m_license_mtx()
                 , m_hardware_ids()
@@ -56,7 +57,7 @@ namespace gwecom {
             {
                 std::string vaild_path = root_path;
                 char cur_path[PATH_MAX];
-                if(root_path.empty() || access(root_path.c_str(), F_OK) < 0){
+                if(root_path.empty() || root_path == "." || access(root_path.c_str(), F_OK) < 0){
                     if(getcwd(cur_path, PATH_MAX)){
                         vaild_path = cur_path;
                     }else{
@@ -98,6 +99,8 @@ namespace gwecom {
                         hwlicense_file.close();
                     }
                 }
+
+                m_logger = logger_factory::make_logger(logger_name, logger_name);
             }
 
 
@@ -150,7 +153,10 @@ namespace gwecom {
             void rest_request_process::send_response(HttpResponse *resp, const std::string& response_message, STATUS_CODE status_code)
             {
                 std::string status = std::to_string(status_code);
-                printf("---- response status_code: %s, message: \n\t\t%s\n\n", status.c_str(), response_message.c_str());
+                //printf("---- response status_code: %s, message: \n\t\t%s\n\n", status.c_str(), response_message.c_str());
+                if(m_logger){
+                    m_logger->info("#### response status_code: {}, message:  {}\n", status, response_message);
+                }
                 resp->set_header_pair("Content-Type", "application/json");
                 resp->set_status_code(status);
                 resp->append_output_body(response_message);

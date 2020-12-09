@@ -30,6 +30,7 @@
 #include "workflow/Workflow.h"
 #include "workflow/WFFacilities.h"
 #include "rest_request_process.h"
+#include "logger_factory.h"
 
 
 using namespace protocol;
@@ -70,7 +71,10 @@ void process(WFHttpTask *server_task, rest_request_process *rest_process)
         }
     }
 
-    printf("Remote-peer: %s:%d, Request-URI: %s\n", addrstr, remote_port, uri);
+    //printf("Remote-peer: %s:%d, Request-URI: %s\n", addrstr, remote_port, uri);
+    if(auto logger = logger_factory::get("rest_server")){
+        logger->info("Remote-peer {}:{}, Request-URI: {}", addrstr, remote_port, uri);
+    }
 
     if(*p == '/')++p;
 
@@ -143,6 +147,7 @@ int main(int argc, char *argv[])
 
 	unsigned short port = atoi(argv[1]);
 	const char *root = (argc >= 3 ? argv[2] : ".");
+    logger_factory::init();
 	rest_request_process rest_process(root);
 	auto&& proc = std::bind(process, std::placeholders::_1, &rest_process);
 	WFHttpServer server(proc);
