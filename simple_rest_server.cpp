@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <utility>
 #include "workflow/HttpMessage.h"
 #include "workflow/WFHttpServer.h"
@@ -46,7 +48,29 @@ void process(WFHttpTask *server_task, rest_request_process *rest_process)
         return;
     }
 
-    printf("Request-URI: %s\n", uri);
+    char addrstr[128];
+    struct sockaddr_storage addr;
+    socklen_t l = sizeof addr;
+    unsigned short remote_port = 0;
+
+    int result = server_task->get_peer_addr((struct sockaddr *)&addr, &l);
+    if(result == -1){
+        strcpy(addrstr, "Unknown");
+    }else {
+        if (addr.ss_family == AF_INET) {
+            struct sockaddr_in *sin = (struct sockaddr_in *) &addr;
+            inet_ntop(AF_INET, &sin->sin_addr, addrstr, 128);
+            remote_port = ntohs(sin->sin_port);
+        } else if (addr.ss_family == AF_INET6) {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *) &addr;
+            inet_ntop(AF_INET6, &sin6->sin6_addr, addrstr, 128);
+            remote_port = ntohs(sin6->sin6_port);
+        } else {
+            strcpy(addrstr, "Unknown");
+        }
+    }
+
+    printf("Remote-peer: %s:%d, Request-URI: %s\n", addrstr, remote_port, uri);
 
     if(*p == '/')++p;
 

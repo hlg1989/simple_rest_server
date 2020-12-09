@@ -67,6 +67,7 @@ namespace gwecom {
             private:
                 std::string write_to_json(const rest_response& response);
                 void send_response(HttpResponse *resp, const std::string& response_message, STATUS_CODE status_code);
+                void process_get_license_by_hwid(HttpResponse *resp, const char* hardware_id);
 
             private:
                 std::mutex m_hwid_mtx;

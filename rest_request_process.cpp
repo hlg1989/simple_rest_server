@@ -13,6 +13,8 @@
 #include <sstream>
 #include <nlohmann/json.hpp>
 
+#define ENABLE_GET_LICENSE_IN_UPLOAD_HWID_PROCEDURE 1
+
 using namespace protocol;
 using json = nlohmann::json;
 namespace gwecom {
@@ -226,63 +228,7 @@ namespace gwecom {
                     while (*p && *p != '=')
                         p++;
                     std::string hwid_value(id_value, p - id_value);
-                    std::unordered_map<std::string, std::string> tmp_licenses;
-                    {
-                        std::unique_lock<std::mutex> lock(m_license_mtx);
-                        tmp_licenses = m_hwid_licenses;
-                        if (tmp_licenses.empty()) {
-                            std::ifstream file(m_hwlicense_filename);
-                            std::string hwid_license_pair;
-
-                            while (std::getline(file, hwid_license_pair)) {
-                                std::string hardware_id;
-                                std::string license_value;
-                                std::istringstream iss(hwid_license_pair);
-                                iss >> hardware_id >> license_value;
-                                m_hwid_licenses[hardware_id] = license_value;
-                            }
-                            tmp_licenses = m_hwid_licenses;
-                        }
-                    }
-
-                    if(tmp_licenses.find(hwid_value) == tmp_licenses.end()){
-                        rest_response response;
-                        response.result_code = REST_RESULT_CODE_NO_AVAILABLE_HW_LICENSE;
-                        response.result_message = rest_result_code_to_string(response.result_code);
-                        std::string err_response = write_to_json(response);
-                        send_response(resp, err_response, STATUS_CODE_PAGE_NOT_FOUND);
-                        return;
-                    }
-
-
-                    std::string available_license;
-                    try {
-                        json jobj;
-                        jobj["hwid"] = hwid_value;
-                        jobj["license"] = m_hwid_licenses[hwid_value];
-                        available_license = jobj.dump();
-                    } catch (json::exception& e) {
-                        available_license = std::string("json parse failed: ") + e.what();
-
-                        rest_response response;
-                        response.result_code = REST_RESULT_CODE_SERVER_INTERNAL_ERROR;
-                        response.result_message = rest_result_code_to_string(response.result_code);
-                        response.result_message += ": get_license, ";
-                        response.response_data = available_license;
-                        std::string out_response = write_to_json(response);
-
-                        send_response(resp, out_response, STATUS_CODE_SERVER_INTERNAL_ERROR);
-                        return;
-                    }
-
-                    rest_response response;
-                    response.result_code = REST_RESULT_CODE_SUCCESS;
-                    response.result_message = rest_result_code_to_string(response.result_code);
-                    response.result_message += ": get_license";
-                    response.response_data = available_license;
-
-                    std::string out_response = write_to_json(response);
-                    send_response(resp, out_response, STATUS_CODE_SUCCESS);
+                    process_get_license_by_hwid(resp, hwid_value.c_str());
                 }
                 else{
                     rest_response response;
@@ -295,6 +241,67 @@ namespace gwecom {
                 }
             }
 
+            void rest_request_process::process_get_license_by_hwid(HttpResponse *resp, const char* hardware_id)
+            {
+                std::string hwid_value = hardware_id;
+                std::unordered_map<std::string, std::string> tmp_licenses;
+                {
+                    std::unique_lock<std::mutex> lock(m_license_mtx);
+                    tmp_licenses = m_hwid_licenses;
+                    if (tmp_licenses.empty()) {
+                        std::ifstream file(m_hwlicense_filename);
+                        std::string hwid_license_pair;
+
+                        while (std::getline(file, hwid_license_pair)) {
+                            std::string hardware_id;
+                            std::string license_value;
+                            std::istringstream iss(hwid_license_pair);
+                            iss >> hardware_id >> license_value;
+                            m_hwid_licenses[hardware_id] = license_value;
+                        }
+                        tmp_licenses = m_hwid_licenses;
+                    }
+                }
+
+                if(tmp_licenses.find(hwid_value) == tmp_licenses.end()){
+                    rest_response response;
+                    response.result_code = REST_RESULT_CODE_NO_AVAILABLE_HW_LICENSE;
+                    response.result_message = rest_result_code_to_string(response.result_code);
+                    std::string err_response = write_to_json(response);
+                    send_response(resp, err_response, STATUS_CODE_PAGE_NOT_FOUND);
+                    return;
+                }
+
+
+                std::string available_license;
+                try {
+                    json jobj;
+                    jobj["hwid"] = hwid_value;
+                    jobj["license"] = m_hwid_licenses[hwid_value];
+                    available_license = jobj.dump();
+                } catch (json::exception& e) {
+                    available_license = std::string("json parse failed: ") + e.what();
+
+                    rest_response response;
+                    response.result_code = REST_RESULT_CODE_SERVER_INTERNAL_ERROR;
+                    response.result_message = rest_result_code_to_string(response.result_code);
+                    response.result_message += ": get_license, ";
+                    response.response_data = available_license;
+                    std::string out_response = write_to_json(response);
+
+                    send_response(resp, out_response, STATUS_CODE_SERVER_INTERNAL_ERROR);
+                    return;
+                }
+
+                rest_response response;
+                response.result_code = REST_RESULT_CODE_SUCCESS;
+                response.result_message = rest_result_code_to_string(response.result_code);
+                response.result_message += ": get_license";
+                response.response_data = available_license;
+
+                std::string out_response = write_to_json(response);
+                send_response(resp, out_response, STATUS_CODE_SUCCESS);
+            }
 
             void rest_request_process::process_upload_hwid(HttpResponse *resp, const char* request_data)
             {
@@ -333,6 +340,10 @@ namespace gwecom {
                         }
                     }
 
+#ifdef ENABLE_GET_LICENSE_IN_UPLOAD_HWID_PROCEDURE
+                    process_get_license_by_hwid(resp, hwid_value.c_str());
+#else
+
                     rest_response response;
                     response.result_code = REST_RESULT_CODE_SUCCESS;
                     response.result_message = rest_result_code_to_string(response.result_code);
@@ -340,6 +351,7 @@ namespace gwecom {
 
                     std::string out_response = write_to_json(response);
                     send_response(resp, out_response, STATUS_CODE_SUCCESS);
+#endif
                 }else{
                     rest_response response;
                     response.result_code = REST_RESULT_CODE_INVALID_PARAM;
