@@ -201,7 +201,7 @@ namespace gwecom {
                 {
                     std::unique_lock<std::mutex>lock(m_hwid_mtx);
                     tmp_hwids = m_hardware_ids;
-                    if(tmp_hwids.empty()){
+                    //if(tmp_hwids.empty()){
                         std::ifstream file(m_hwid_filename);
                         std::string hwid_value;
 
@@ -209,7 +209,7 @@ namespace gwecom {
                             m_hardware_ids.insert(hwid_value);
                         }
                         tmp_hwids = m_hardware_ids;
-                    }
+                    //}
                 }
 
                 if(tmp_hwids.empty()){
@@ -224,9 +224,17 @@ namespace gwecom {
                 std::string available_hwid;
                 try {
                     json jobj;
+//                    for (auto &hwid : tmp_hwids) {
+//                        jobj["hwids"].push_back(hwid);
+//                    }
+                    std::string all_hwids;
                     for (auto &hwid : tmp_hwids) {
-                        jobj["hwids"].push_back(hwid);
+                        all_hwids += hwid + "-";
                     }
+                    if(!all_hwids.empty() && all_hwids[all_hwids.size() - 1] == '-'){
+                        all_hwids.erase(all_hwids.size() - 1);
+                    }
+                    jobj["hwids"] = all_hwids;
                     available_hwid = jobj.dump();
                 } catch (json::exception& e) {
                     rest_response response;
