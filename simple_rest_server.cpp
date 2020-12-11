@@ -113,14 +113,16 @@ void process(WFHttpTask *server_task, rest_request_process *rest_process)
             request_data_len = strlen(request_data);
 	}
 
-	if(rest_function == "get_hwid"){
-        rest_process->process_get_hwid(resp, nullptr);
-	}else if(rest_function == "upload_license"){
-	    rest_process->process_upload_license(resp, request_data);
-	}else if(rest_function == "upload_hwid"){
+	if(rest_function == "get_hwids"){
+        rest_process->process_get_hwids(resp, nullptr);
+	}else if(rest_function == "upload_licenses"){
+        rest_process->process_upload_multi_licenses(resp, request_data);
+    }else if(rest_function == "upload_hwid"){
         rest_process->process_upload_hwid(resp, request_data);
-	}else if(rest_function == "get_license"){
-        rest_process->process_get_license(resp, request_data);
+	}else if(rest_function == "valid_days"){
+        rest_process->process_valid_days(resp, nullptr);
+    }else if(rest_function == "help" || rest_function == "usage"){
+        rest_process->process_help_usage(resp, nullptr);
 	}
 	else{
         rest_process->process_invalid_method(resp, nullptr);

@@ -11,6 +11,7 @@
 #include <mutex>
 #include "workflow/HttpMessage.h"
 #include "spdlog/spdlog.h"
+#include "authenticate_license.h"
 
 using namespace protocol;
 namespace gwecom {
@@ -26,6 +27,8 @@ namespace gwecom {
                 REST_RESULT_CODE_INVALID_HW_ID,
                 REST_RESULT_CODE_NO_AVAILABLE_HW_ID,
                 REST_RESULT_CODE_NO_AVAILABLE_HW_LICENSE,
+                REST_RESULT_CODE_NO_AVAILABLE_HW_ID_OR_LICENSE,
+                REST_RESULT_CODE_AUTH_LICENSE_EXPIRED,
                 REST_RESULT_CODE_SERVER_INTERNAL_ERROR,
             };
 
@@ -58,25 +61,33 @@ namespace gwecom {
                 ~rest_request_process();
 
 
-                void process_get_hwid(HttpResponse *resp, const char* request_data);
+                void process_get_hwids(HttpResponse *resp, const char* request_data);
                 void process_get_license(HttpResponse *resp, const char* request_data);
                 void process_upload_hwid(HttpResponse *resp, const char* request_data);
                 void process_upload_license(HttpResponse *resp, const char* request_data);
+                void process_upload_multi_licenses(HttpResponse *resp, const char* request_data);
+                void process_valid_days(HttpResponse *resp, const char* request_data);
                 void process_invalid_uri(HttpResponse *resp, const char* request_data);
                 void process_invalid_method(HttpResponse *resp, const char* request_data);
+                void process_help_usage(HttpResponse *resp, const char* request_data);
 
             private:
                 std::string write_to_json(const rest_response& response);
                 void send_response(HttpResponse *resp, const std::string& response_message, STATUS_CODE status_code);
                 void process_get_license_by_hwid(HttpResponse *resp, const char* hardware_id);
+                void process_get_license_by_hwid_with_base64(HttpResponse *resp, const char* hardware_id);
 
             private:
                 std::mutex m_hwid_mtx;
                 std::mutex m_license_mtx;
                 std::set<std::string> m_hardware_ids;
+                std::set<std::string> m_licenses;
                 std::unordered_map<std::string, std::string> m_hwid_licenses;
                 std::string m_hwid_filename = "hw_id.txt";
                 std::string m_hwlicense_filename = "hw_license.txt";
+                std::string m_hwid_license_filename = "hw_id_license.txt";
+
+                authenticate_license m_auth_license;
 
                 std::shared_ptr<spdlog::logger> m_logger;
 

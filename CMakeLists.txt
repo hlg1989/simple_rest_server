@@ -7,6 +7,7 @@ project(simple_rest_server  LANGUAGES C CXX)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include_directories(common/others)
+include_directories(authlicense)
 
 find_library(LIBRT rt)
 find_package(OpenSSL REQUIRED)
@@ -21,7 +22,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -pipe -std=c++11 -fexception
 
 set(WORKFLOW_LIB workflow ${LIBRT} pthread OpenSSL::SSL OpenSSL::Crypto)
 
-add_executable(${PROJECT_NAME} simple_rest_server.cpp rest_request_process.cpp logger_factory.cpp)
+add_executable(${PROJECT_NAME} simple_rest_server.cpp rest_request_process.cpp logger_factory.cpp authlicense/authenticate_license.cpp authlicense/base64.cpp authlicense/openssl-RSA.cpp)
 target_link_libraries(${PROJECT_NAME} ${WORKFLOW_LIB})
 
 
