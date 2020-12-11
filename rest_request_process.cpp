@@ -58,7 +58,6 @@ namespace gwecom {
                 , m_hwid_licenses()
                 , m_hwid_filename("hw_id.txt")
                 , m_hwlicense_filename("hw_license.txt")
-                , m_hwid_license_filename("hw_id_license.txt")
                 , m_auth_license(common_ssl_key().private_key, common_ssl_key().public_key)
             {
                 std::string vaild_path = root_path;
@@ -75,16 +74,18 @@ namespace gwecom {
                     bool last_is_slash = (vaild_path[vaild_path.size() - 1] == '/');
                     m_hwid_filename = last_is_slash ? vaild_path + m_hwid_filename : vaild_path + "/" + m_hwid_filename;
                     m_hwlicense_filename = last_is_slash ? vaild_path + m_hwlicense_filename : vaild_path + "/" + m_hwlicense_filename;
-                    m_hwid_license_filename = last_is_slash ? vaild_path + m_hwid_license_filename : vaild_path + "/" + m_hwid_license_filename;
                 }
 
                 {
                     std::ifstream hwid_file(m_hwid_filename);
                     if(hwid_file.is_open()) {
-                        std::string hwid_value;
-
-                        while (std::getline(hwid_file, hwid_value)) {
-                            m_hardware_ids.insert(hwid_value);
+                        std::string tmp_mac_hwid_pair;
+                        while(getline(hwid_file, tmp_mac_hwid_pair)){
+                            std::string mac;
+                            std::string hwid;
+                            std::istringstream iss(tmp_mac_hwid_pair);
+                            if(iss >> mac >> hwid && !mac.empty() && !hwid.empty())
+                                m_hardware_ids[mac] = hwid;
                         }
                         hwid_file.close();
                     }
@@ -102,23 +103,6 @@ namespace gwecom {
                     }
                 }
 
-                {
-                    std::ifstream hwlicense_file(m_hwid_license_filename);
-                    if(hwlicense_file.is_open()) {
-                        std::string hwid_license_pair;
-
-                        while (std::getline(hwlicense_file, hwid_license_pair)) {
-                            std::string tmp_hwid_value;
-                            std::string tmp_license_value;
-                            std::istringstream iss(hwid_license_pair);
-                            iss >> tmp_hwid_value >> tmp_license_value;
-                            if(iss)
-                                m_hwid_licenses[tmp_hwid_value] = tmp_license_value;
-                        }
-                        hwlicense_file.close();
-                    }
-                }
-
                 m_logger = logger_factory::make_logger(logger_name, logger_name);
             }
 
@@ -128,7 +112,7 @@ namespace gwecom {
                 {
                     std::ostringstream whole_hwid;
                     for (auto &tmp : m_hardware_ids) {
-                        whole_hwid << tmp << std::endl;
+                        whole_hwid << tmp.first << " " << tmp.second << std::endl;
                     }
 
                     std::ofstream hwid_file(m_hwid_filename, std::ios_base::out);
@@ -151,18 +135,6 @@ namespace gwecom {
                     }
                 }
 
-                {
-                    std::ostringstream whole_hwid_license;
-                    for (auto &tmp : m_hwid_licenses) {
-                        whole_hwid_license << tmp.first << "    " << tmp.second << std::endl;
-                    }
-
-                    std::ofstream hwlicense_file(m_hwid_license_filename, std::ios_base::out);
-                    if (hwlicense_file) {
-                        hwlicense_file << whole_hwid_license.str();
-                        hwlicense_file.close();
-                    }
-                }
             }
 
 
@@ -197,19 +169,25 @@ namespace gwecom {
 
             void rest_request_process::process_get_hwids(HttpResponse *resp, const char* request_data)
             {
-                std::set<std::string>tmp_hwids;
+                std::unordered_map<std::string, std::string>tmp_hwids;
                 {
                     std::unique_lock<std::mutex>lock(m_hwid_mtx);
                     tmp_hwids = m_hardware_ids;
-                    //if(tmp_hwids.empty()){
+                    if(tmp_hwids.empty()){
                         std::ifstream file(m_hwid_filename);
-                        std::string hwid_value;
-
-                        while(std::getline(file, hwid_value)) {
-                            m_hardware_ids.insert(hwid_value);
+                        if(file){
+                            std::string tmp_mac_hwid_pair;
+                            while(getline(file, tmp_mac_hwid_pair)){
+                                std::string mac;
+                                std::string hwid;
+                                std::istringstream iss(tmp_mac_hwid_pair);
+                                if(iss >> mac >> hwid && !mac.empty() && !hwid.empty())
+                                    m_hardware_ids[mac] = hwid;
+                            }
+                            file.close();
                         }
                         tmp_hwids = m_hardware_ids;
-                    //}
+                    }
                 }
 
                 if(tmp_hwids.empty()){
@@ -224,12 +202,9 @@ namespace gwecom {
                 std::string available_hwid;
                 try {
                     json jobj;
-//                    for (auto &hwid : tmp_hwids) {
-//                        jobj["hwids"].push_back(hwid);
-//                    }
                     std::string all_hwids;
-                    for (auto &hwid : tmp_hwids) {
-                        all_hwids += hwid + "-";
+                    for (auto &tmp : tmp_hwids) {
+                        all_hwids += tmp.second + "-";
                     }
                     if(!all_hwids.empty() && all_hwids[all_hwids.size() - 1] == '-'){
                         all_hwids.erase(all_hwids.size() - 1);
@@ -257,93 +232,6 @@ namespace gwecom {
                 send_response(resp, out_response, STATUS_CODE_SUCCESS);
             }
 
-
-            void rest_request_process::process_get_license(HttpResponse *resp, const char* request_data)
-            {
-                const char* p = request_data;
-                const char* id_key = p;
-                while (*p && *p != '=')
-                    p++;
-                std::string hwid_key(id_key, p - id_key);
-                if(hwid_key == "hwid") {
-                    ++p;
-                    const char *id_value = p;
-                    while (*p && *p != '=')
-                        p++;
-                    std::string hwid_value(id_value, p - id_value);
-                    process_get_license_by_hwid(resp, hwid_value.c_str());
-                }
-                else{
-                    rest_response response;
-                    response.result_code = REST_RESULT_CODE_INVALID_PARAM;
-                    response.result_message = rest_result_code_to_string(response.result_code);
-                    response.result_message += "  usage: http://127.0.0.1:8080/api/get_license?hwid=xxxxxxx";
-
-                    std::string err_response = write_to_json(response);
-                    send_response(resp, err_response, STATUS_CODE_BAD_REQUEST);
-                }
-            }
-
-            void rest_request_process::process_get_license_by_hwid(HttpResponse *resp, const char* hardware_id)
-            {
-                std::string hwid_value = hardware_id;
-                std::unordered_map<std::string, std::string> tmp_licenses;
-                {
-                    std::unique_lock<std::mutex> lock(m_license_mtx);
-                    tmp_licenses = m_hwid_licenses;
-                    if (tmp_licenses.empty()) {
-                        std::ifstream file(m_hwid_license_filename);
-                        std::string hwid_license_pair;
-
-                        while (std::getline(file, hwid_license_pair)) {
-                            std::string hardware_id;
-                            std::string license_value;
-                            std::istringstream iss(hwid_license_pair);
-                            iss >> hardware_id >> license_value;
-                            m_hwid_licenses[hardware_id] = license_value;
-                        }
-                        tmp_licenses = m_hwid_licenses;
-                    }
-                }
-
-                if(tmp_licenses.find(hwid_value) == tmp_licenses.end()){
-                    rest_response response;
-                    response.result_code = REST_RESULT_CODE_NO_AVAILABLE_HW_LICENSE;
-                    response.result_message = rest_result_code_to_string(response.result_code);
-                    std::string err_response = write_to_json(response);
-                    send_response(resp, err_response, STATUS_CODE_PAGE_NOT_FOUND);
-                    return;
-                }
-
-
-                std::string available_license;
-                try {
-                    json jobj;
-                    jobj["hwid"] = hwid_value;
-                    jobj["license"] = m_hwid_licenses[hwid_value];
-                    available_license = jobj.dump();
-                } catch (json::exception& e) {
-                    available_license = std::string("json parse failed: ") + e.what();
-
-                    rest_response response;
-                    response.result_code = REST_RESULT_CODE_SERVER_INTERNAL_ERROR;
-                    response.result_message = rest_result_code_to_string(response.result_code);
-                    response.result_message += ": get_license, " + available_license;
-                    std::string out_response = write_to_json(response);
-
-                    send_response(resp, out_response, STATUS_CODE_SERVER_INTERNAL_ERROR);
-                    return;
-                }
-
-                rest_response response;
-                response.result_code = REST_RESULT_CODE_SUCCESS;
-                response.result_message = rest_result_code_to_string(response.result_code);
-                response.result_message += ": get_license";
-                response.response_data = available_license;
-
-                std::string out_response = write_to_json(response);
-                send_response(resp, out_response, STATUS_CODE_SUCCESS);
-            }
 
             void rest_request_process::process_get_license_by_hwid_with_base64(HttpResponse *resp, const char* hardware_id)
             {
@@ -430,7 +318,8 @@ namespace gwecom {
                 try{
                     auto jobj = json::parse(request_data);
 
-                    if(jobj.contains("hwid")){
+                    if(jobj.contains("hwid") && jobj.contains("mac")){
+                        std::string mac_value = jobj["mac"];
                         std::string hwid_value = jobj["hwid"];
 
                         {
@@ -438,22 +327,27 @@ namespace gwecom {
                             if(m_hardware_ids.empty()){
                                 std::ifstream file(m_hwid_filename, std::ios_base::in);
                                 if(file){
-                                    std::string tmp_hwid_value;
-                                    while(getline(file, tmp_hwid_value)){
-                                        m_hardware_ids.insert(tmp_hwid_value);
+                                    std::string tmp_mac_hwid_pair;
+                                    while(getline(file, tmp_mac_hwid_pair)){
+                                        std::string mac;
+                                        std::string hwid;
+                                        std::istringstream iss(tmp_mac_hwid_pair);
+                                        if(iss >> mac >> hwid && !mac.empty() && !hwid.empty())
+                                            m_hardware_ids[mac] = hwid;
                                     }
                                     file.close();
                                 }
 
                             }
 
-                            if(m_hardware_ids.find(hwid_value) == m_hardware_ids.end()){
-                                m_hardware_ids.insert(hwid_value);
-                                std::ofstream file(m_hwid_filename, std::ios_base::app);
-                                if(file) {
-                                    file << hwid_value << std::endl;
-                                    file.close();
+                            m_hardware_ids[mac_value] = hwid_value;
+
+                            std::ofstream file(m_hwid_filename, std::ios_base::out);
+                            if(file) {
+                                for(const auto& tmp : m_hardware_ids){
+                                    file << tmp.first << " " << tmp.second << std::endl;
                                 }
+                                file.close();
                             }
                         }
 
@@ -475,7 +369,7 @@ namespace gwecom {
                         response.result_message = rest_result_code_to_string(response.result_code);
                         response.result_message += "\n  ****USAGE : use the http POST method to access the rest_server URI with json parameter, such as:\n\n";
                         response.result_message += "        URI ---- http://ip:port/api/upload_hwid\n";
-                        response.result_message += "        JSON pattern parameter ---- {\"hwid\" : \"xxxxxxxxxx\"}\n";
+                        response.result_message += "        JSON pattern parameter ---- {\"hwid\" : \"xxxxxxxxxx\", \"mac\" : \"oooooooooo\"}\n";
 
                         std::string err_response = write_to_json(response);
 
@@ -488,116 +382,11 @@ namespace gwecom {
                     response.result_message += std::string(": in method \"upload_hwid\", json parse failed. \n");
                     response.result_message += "\n  ****USAGE : use the http POST method to access the rest_server URI with json parameter, such as:\n\n";
                     response.result_message += "        URI ---- http://ip:port/api/upload_hwid\n";
-                    response.result_message += "        JSON pattern parameter ---- {\"hwid\" : \"xxxxxxxxxx\"}\n";
+                    response.result_message += "        JSON pattern parameter ---- {\"hwid\" : \"xxxxxxxxxx\", \"mac\" : \"oooooooooo\"}\n";
                     std::string out_response = write_to_json(response);
 
                     send_response(resp, out_response, STATUS_CODE_SERVER_INTERNAL_ERROR);
                     return;
-                }
-            }
-
-            void rest_request_process::process_upload_license(HttpResponse *resp, const char* request_data)
-            {
-                const char* p = request_data;
-                const char* id_key = p;
-                while (*p && *p != '=')
-                    p++;
-                std::string hwid_key(id_key, p - id_key);
-                if(hwid_key == "hwid"){
-                    ++p;
-                    const char* id_value = p;
-                    while (*p && *p != '&')
-                        p++;
-                    std::string hwid_value(id_value, p - id_value);
-
-                    std::set<std::string>tmp_hwids;
-                    {
-                        std::unique_lock<std::mutex>lock(m_hwid_mtx);
-                        tmp_hwids = m_hardware_ids;
-                        if(tmp_hwids.empty()){
-                            std::ifstream file(m_hwid_filename);
-                            std::string hwid_value;
-
-                            while(std::getline(file, hwid_value)) {
-                                m_hardware_ids.insert(hwid_value);
-                            }
-                            tmp_hwids = m_hardware_ids;
-                        }
-                    }
-
-                    if(tmp_hwids.find(hwid_value) == tmp_hwids.end()){
-                        rest_response response;
-                        response.result_code = REST_RESULT_CODE_INVALID_HW_ID;
-                        response.result_message = rest_result_code_to_string(response.result_code);
-                        std::string tmp_desc = "\nNo such hardware_id: " + hwid_value + " can be licensed\n";
-                        tmp_desc += "  the available hardware ids are as follows:\n";
-                        for(auto& hwid : tmp_hwids){
-                            tmp_desc += hwid + "\n";
-                        }
-                        response.result_message += tmp_desc;
-                        std::string err_response = write_to_json(response);
-                        send_response(resp, err_response, STATUS_CODE_PAGE_NOT_FOUND);
-                        return;
-                    }
-
-                    ++p;
-                    const char* lic_key = p;
-                    while (*p && *p != '=')
-                        p++;
-                    std::string license_key(lic_key, p - lic_key);
-                    if(license_key == "license") {
-                        ++p;
-                        const char *lic_value = p;
-                        while (*p && *p != '&')
-                            p++;
-                        std::string license_value(lic_value, p - lic_value);
-
-                        {
-                            std::unique_lock<std::mutex> lock(m_license_mtx);
-                            if (m_hwid_licenses.empty()) {
-                                std::ifstream file(m_hwid_license_filename);
-                                std::string hwid_license_pair;
-
-                                while (std::getline(file, hwid_license_pair)) {
-                                    std::string tmp_hwid_value;
-                                    std::string tmp_license_value;
-                                    std::istringstream iss(hwid_license_pair);
-                                    iss >> tmp_hwid_value >> tmp_license_value;
-                                    m_hwid_licenses[tmp_hwid_value] = tmp_license_value;
-                                }
-                            }
-
-                            m_hwid_licenses[hwid_value] = license_value;
-                            std::ostringstream whole_hwid_license;
-                            for(auto& tmp : m_hwid_licenses){
-                                whole_hwid_license << tmp.first << "    " << tmp.second << std::endl;
-                            }
-
-                            std::ofstream lic_file(m_hwid_license_filename, std::ios_base::out);
-                            if(lic_file) {
-                                lic_file << whole_hwid_license.str();
-                                lic_file.close();
-                            }
-                        }
-
-                        rest_response response;
-                        response.result_code = REST_RESULT_CODE_SUCCESS;
-                        response.result_message = rest_result_code_to_string(response.result_code);
-                        response.result_message += ": upload_license";
-
-                        std::string out_response = write_to_json(response);
-                        send_response(resp, out_response, STATUS_CODE_SUCCESS);
-                    }
-
-                }else{
-                    rest_response response;
-                    response.result_code = REST_RESULT_CODE_INVALID_PARAM;
-                    response.result_message = rest_result_code_to_string(response.result_code);
-                    response.result_message += "\nusage: http://127.0.0.1:8080/api/upload_license?hwid=xxxxxxx";
-
-                    std::string err_response = write_to_json(response);
-
-                    send_response(resp, err_response, STATUS_CODE_BAD_REQUEST);
                 }
             }
 
@@ -667,7 +456,7 @@ namespace gwecom {
                         response.result_message = rest_result_code_to_string(response.result_code);
                         response.result_message += "\n  ****USAGE : use the http POST method to access the rest_server URI with json parameter, such as:\n\n";
                         response.result_message += "        URI ---- http://ip:port/api/upload_licenses\n";
-                        response.result_message += "        JSON pattern parameter ---- {\"licenses\" : [\"xxxxxxxxxx-oooooooooo\"]}\n";
+                        response.result_message += "        JSON pattern parameter ---- {\"licenses\" : \"xxxxxxxxxx-oooooooooo\"}\n";
 
                         std::string err_response = write_to_json(response);
 
@@ -680,7 +469,7 @@ namespace gwecom {
                     response.result_message += std::string(": in method \"upload_licenses\", json parse failed. \n");
                     response.result_message += "\n  ****USAGE : use the http POST method to access the rest_server URI with json parameter, such as:\n\n";
                     response.result_message += "        URI ---- http://ip:port/api/upload_licenses\n";
-                    response.result_message += "        JSON pattern parameter ---- {\"licenses\" : [\"xxxxxxxxxx-oooooooooo\"]}\n";
+                    response.result_message += "        JSON pattern parameter ---- {\"licenses\" : \"xxxxxxxxxx-oooooooooo\"}\n";
                     std::string out_response = write_to_json(response);
 
                     send_response(resp, out_response, STATUS_CODE_SERVER_INTERNAL_ERROR);
@@ -690,16 +479,22 @@ namespace gwecom {
 
             void rest_request_process::process_valid_days(HttpResponse *resp, const char* request_data)
             {
-                std::set<std::string>tmp_hwids;
+                std::unordered_map<std::string, std::string>tmp_hwids;
                 {
                     std::unique_lock<std::mutex>lock(m_hwid_mtx);
                     tmp_hwids = m_hardware_ids;
                     if(tmp_hwids.empty()){
                         std::ifstream file(m_hwid_filename);
-                        std::string hwid_value;
-
-                        while(std::getline(file, hwid_value)) {
-                            m_hardware_ids.insert(hwid_value);
+                        if(file){
+                            std::string tmp_mac_hwid_pair;
+                            while(getline(file, tmp_mac_hwid_pair)){
+                                std::string mac;
+                                std::string hwid;
+                                std::istringstream iss(tmp_mac_hwid_pair);
+                                if(iss >> mac >> hwid && !mac.empty() && !hwid.empty())
+                                    m_hardware_ids[mac] = hwid;
+                            }
+                            file.close();
                         }
                         tmp_hwids = m_hardware_ids;
                     }
@@ -732,10 +527,10 @@ namespace gwecom {
                 }
 
                 int valid_days = -1;
-                for(auto hwid : tmp_hwids){
+                for(const auto& hwid : tmp_hwids){
 
                     HWInfo hw_info;
-                    if(!m_auth_license.decode_hwinfo(hwid, &hw_info)){
+                    if(!m_auth_license.decode_hwinfo(hwid.second, &hw_info)){
                         continue;
                     }
 
@@ -818,8 +613,8 @@ namespace gwecom {
                 help_message += "* help/usage * API : to output this usage message. \n        use http GET method to access the URI, such as: http://ip:port/api/help  OR  http://ip:port/api/usage\n";
                 help_message += "* get_hwids * API : to get all uploaded haredware ids. \n        use http GET method to access the URI, such as: http://ip:port/api/get_hwids\n";
                 help_message += "* valid_days * API : to get license rest valid days. \n        use http GET method to access the URI, such as: http://ip:port/api/valid_days\n";
-                help_message += "* upload_licenses * API :  to upload all licenses. \n        use http POST method with JSON pattern parameter {\"licenses\" : [\"xxxxxxxxxx-oooooooooo\"]} to access the URI: http://ip:port/api/upload_licenses\n";
-                help_message += "* upload_hwid * API : to upload hardware id and return its license if fount it in rest server. \n        use http POST method with JSON pattern parameter  {\"hwid\" : \"xxxxxxxxxx\"}  to access the URI: http://ip:port/api/upload_hwid\n";
+                help_message += "* upload_licenses * API :  to upload all licenses. \n        use http POST method with JSON pattern parameter {\"licenses\" : \"xxxxxxxxxx-oooooooooo\"} to access the URI: http://ip:port/api/upload_licenses\n";
+                help_message += "* upload_hwid * API : to upload hardware id and return its license if fount it in rest server. \n        use http POST method with JSON pattern parameter  {\"hwid\" : \"xxxxxxxxxx\", \"mac\" : \"oooooooooo\"}  to access the URI: http://ip:port/api/upload_hwid\n";
                 response.result_message += help_message;
 
                 std::string out_response = write_to_json(response);
